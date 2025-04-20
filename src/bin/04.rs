@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 
 advent_of_code::solution!(4);
 
@@ -44,59 +43,73 @@ pub fn part_one(_input: &str) -> Option<u64> {
     // None
 }
 
+// https://nickymeuleman.netlify.app/blog/aoc2023-day04/
 pub fn part_two(_input: &str) -> Option<u64> {
-    let cards = _input
-    .lines()
-    .map(|line| {
-        line.split_once(':')
-            .map(|(id, other)| {
-                (
-                    id.split_whitespace().last().unwrap().parse::<usize>().unwrap(),
-                    other.split_once('|').unwrap(),
-                )
-            })
-            .map(|(_id, (one, two))| {
-                let mut g = (
-                    _id,
-                    one
-                        .split_whitespace()
-                        .map(|num| num.parse().unwrap())
-                        .collect::<Vec<usize>>(),
-                    two
-                        .split_whitespace()
-                        .map(|num| num.parse().unwrap())
-                        .collect::<Vec<usize>>(),
-                );
-                g.1.sort();
-                g.2.sort();
-                g
-            })
-            .unwrap()
-    }).collect::<Vec<_>>();
-    let mut copies = HashMap::new();
-    let max_id = cards.len();
-    cards.iter().for_each(|(id, winning, yours)|{
-        let mut next = id + 1;
-        let card_wins = yours.iter().filter_map(|your|{
-            if winning.contains(your) && next <= max_id {
-                next +=1;
-                Some(next-1)
-            } else {
-                None
-            }
-        }).collect::<Vec<_>>();
-        copies.insert(id, card_wins);
-    });
-    let mut stack = cards.iter().map(|(id, _, _)|*id).collect::<Vec<_>>();
-    let mut i = 0;
-    while i < stack.len() {
-        let card_id = stack[i];
-        if let Some(ids) = copies.get(&card_id) {
-            stack.splice(i+1..i+1, ids.clone());
+    Some(_input.lines().enumerate()
+    .scan(vec![1; _input.lines().count()], | counts, (idx, line) |{
+        let (_, numbers) = line.split_once(": ").unwrap();
+        let (winning, holding ) = numbers.split_once("|").unwrap();
+        let winning = winning.split_whitespace();
+        let holding = holding.split_whitespace().collect::<Vec<_>>();
+        let num_winners = winning.filter(|s|holding.contains(s)).count();
+        let num_cards = counts[idx];
+        for i in idx+1..=idx+num_winners {
+            counts[i] += num_cards;
         }
-        i +=1;
-    }
-    Some(stack.len() as u64)
+        Some(num_cards)
+}).sum())
+    // let cards = _input
+    // .lines()
+    // .map(|line| {
+    //     line.split_once(':')
+    //         .map(|(id, other)| {
+    //             (
+    //                 id.split_whitespace().last().unwrap().parse::<usize>().unwrap(),
+    //                 other.split_once('|').unwrap(),
+    //             )
+    //         })
+    //         .map(|(_id, (one, two))| {
+    //             let mut g = (
+    //                 _id,
+    //                 one
+    //                     .split_whitespace()
+    //                     .map(|num| num.parse().unwrap())
+    //                     .collect::<Vec<usize>>(),
+    //                 two
+    //                     .split_whitespace()
+    //                     .map(|num| num.parse().unwrap())
+    //                     .collect::<Vec<usize>>(),
+    //             );
+    //             g.1.sort();
+    //             g.2.sort();
+    //             g
+    //         })
+    //         .unwrap()
+    // }).collect::<Vec<_>>();
+    // let mut copies = HashMap::new();
+    // let max_id = cards.len();
+    // cards.iter().for_each(|(id, winning, yours)|{
+    //     let mut next = id + 1;
+    //     let card_wins = yours.iter().filter_map(|your|{
+    //         if winning.contains(your) && next <= max_id {
+    //             next +=1;
+    //             Some(next-1)
+    //         } else {
+    //             None
+    //         }
+    //     }).collect::<Vec<_>>();
+    //     copies.insert(id, card_wins);
+    // });
+    // let mut stack = cards.iter().map(|(id, _, _)|*id).collect::<Vec<_>>();
+    // let mut i = 0;
+    // while i < stack.len() {
+    //     let card_id = stack[i];
+    //     if let Some(ids) = copies.get(&card_id) {
+    //         stack.splice(i+1..i+1, ids.clone());
+    //     }
+    //     i +=1;
+    // }
+    // Some(stack.len() as u64)
 }
 
 #[cfg(test)]
