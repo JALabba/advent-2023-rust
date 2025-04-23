@@ -16,6 +16,7 @@ pub fn part_one(_input: &str) -> Option<i64> {
 
 pub fn part_two(_input: &str) -> Option<i64> {
     let almanac = Almanac::parse(_input);
+    // let almanac = Almanac::parse(&advent_of_code::template::read_file("examples", DAY));
     let mut seeds = almanac.seeds
         .clone()
         .chunks_exact(2)
@@ -44,13 +45,10 @@ pub fn part_two(_input: &str) -> Option<i64> {
     // None
 }
 
-
-
 #[derive(Debug, PartialEq, Eq)]
 struct RangeMap {
     to: i64,
-    start: i64,
-    length: i64,
+    range: Range<i64>,
 }
 
 impl IntoIterator for RangeMap {
@@ -59,13 +57,13 @@ impl IntoIterator for RangeMap {
     type IntoIter = std::ops::Range<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        (self.start..self.start + self.length).into_iter()
+        self.range.into_iter()
     }
 }
 
 impl RangeMap {
     fn new(dest: i64, start: i64, length: i64) -> Self {
-        Self { to: dest, start, length }
+        Self { to: dest, range: start..start + length }
     }
 
     fn from_str(s: &str) -> Self {
@@ -78,30 +76,30 @@ impl RangeMap {
     }
 
     fn contains(&self, value: i64) -> bool {
-        self.start <= value && value < self.start + self.length
+        self.range.contains(&value)
     }
 
     fn apply(&self, value: i64) -> i64 {
-        if self.start <= value && value < self.start + self.length {
-            self.to + (value.abs_diff(self.start) as i64)
+        if self.contains(value) {
+            self.to + (value.abs_diff(self.range.start) as i64)
         } else {
             value
         }
     }
 
     fn overlaps(&self, range: &Range<i64>) -> bool {
-        !(range.end <= self.start || range.start >= self.start + self.length)
+        !(range.end <= self.range.start || range.start >= self.range.end)
     }
 
     fn overlap_split(&self, range: &Range<i64>) -> Range<i64> {
-        let start = self.start.max(range.start);
-        let end = (self.start + self.length).min(range.end);
+        let start = self.range.start.max(range.start);
+        let end = self.range.end.min(range.end);
         start..end
     }
 
     fn shift(&self, range: &Range<i64>) -> Range<i64> {
-        let offset = self.to.abs_diff(self.start) as i64;
-        if self.to >= self.start {
+        let offset = self.to.abs_diff(self.range.start) as i64;
+        if self.to >= self.range.start {
             let start = range.start.saturating_add(offset);
             let end = range.end.saturating_add(offset);
             start..end
@@ -139,7 +137,7 @@ impl Almanac {
                     .skip(1)
                     .map(|line| RangeMap::from_str(line))
                     .collect::<Vec<_>>();
-                maps.sort_by_key(|r| r.start);
+                maps.sort_by_key(|r| r.range.start);
                 maps
             })
             .collect();
@@ -156,38 +154,122 @@ impl Almanac {
     }
 
     fn apply_range(&self, range: Range<i64>, index: usize) -> Vec<Range<i64>> {
-        let mut new_ranges = vec![range];
+        // tried to translate my shitty code from 2023 that passed into this, it failed.
+        // This relies on sorting to look up the next possible overlapping map.
 
-        for rule in &self.maps[index] {
+        // let mut new_ranges = vec![];
+        // let mut current = range;
+        // loop {
+        //     // println!("{:?}", current);
+        //     // sleep(Duration::from_millis(100));
+        //     match self.maps[index].iter().find(|&rm| rm.range.end - 1 > current.start) {
+        //         Some(rule) => {
+        //             // this rule starts after current
+        //             // if current ends before this rule, push and break
+        //             if current.end < rule.range.start {
+        //                 new_ranges.push(current);
+        //                 break;
+        //             }
+        //             // there is some overlap
+        //             let new_range = rule.overlap_split(&current);
+        //             let diff = subtract_range_from(&current, &new_range);
+        //             let shifted_range = rule.shift(&new_range);
+        //             // complete overlap
+        //             if diff == (None, None) {
+        //                 new_ranges.push(shifted_range);
+        //                 break;
+        //             }
+        //             if let Some(before) = diff.0 {
+        //                 new_ranges.push(before);
+        //             }
+        //             // overlapping end
+        //             if current.end <= rule.range.end {
+        //                 break;
+        //             }
+        //             if let Some(after) = diff.1 {
+        //                 new_ranges.push(after);
+        //             }
+
+        //             current = rule.range.end..current.end;
+        //         }
+        //         None => {
+        //             new_ranges.push(current);
+        //             break;
+        //         }
+        //     }
+        // }
+        // new_ranges.sort_by_key(|r| r.start);
+
+        // My final solution filters first, but that is the only thing i see different from before 20 hrs of debug
+        let overlapping = self.maps[index]
+            .iter()
+            .filter(|&rule| rule.overlaps(&range))
+            .collect::<Vec<_>>();
+
+        if overlapping.len() == 0 {
+            vec![range]
+        } else {
             let mut next_ranges = Vec::new();
-            for range in new_ranges {
-                if rule.overlaps(&range) {
-                    let new_range = rule.overlap_split(&range);
-                    let diff = subtract_range_from(&range, &new_range);
-                    let shifted_range = rule.shift(&new_range);
-                    if shifted_range.start < shifted_range.end {
-                        next_ranges.push(shifted_range);
+            for rule in overlapping {
+                let new_range = rule.overlap_split(&range);
+                let diff = subtract_range_from(&range, &new_range);
+                let shifted_range = rule.shift(&new_range);
+                if shifted_range.start < shifted_range.end {
+                    next_ranges.push(shifted_range);
+                }
+                match diff {
+                    (Some(before), None) => next_ranges.extend(self.apply_range(before, index)),
+                    (None, Some(after)) => next_ranges.extend(self.apply_range(after, index)),
+                    (Some(before), Some(after)) => {
+                        next_ranges.extend(self.apply_range(before, index));
+                        next_ranges.extend(self.apply_range(after, index));
                     }
-                    next_ranges.extend(diff);
-                } else {
-                    next_ranges.push(range);
+                    (None, None) => (),
                 }
             }
-            new_ranges = next_ranges;
+            next_ranges
         }
-        new_ranges
+
+        // my initial new attempt was trying it multiple ways, straight, recursive, feedback, all failed.
+
+        // for rule in &self.maps[index] {
+        //     let mut next_ranges = Vec::new();
+        //     for range in new_ranges {
+        //         if rule.overlaps(&range) {
+        //             let new_range = rule.overlap_split(&range);
+        //             let diff = subtract_range_from(&range, &new_range);
+        //             let shifted_range = rule.shift(&new_range);
+        //             if shifted_range.start < shifted_range.end {
+        //                 next_ranges.push(shifted_range);
+        //             }
+        //             match diff {
+        //                 (Some(before), None) => next_ranges.push(before),
+        //                 (None, Some(after)) => next_ranges.push(after),
+        //                 (Some(before), Some(after)) => next_ranges.extend(vec![before, after]),
+        //                 (None, None) => {},
+        //             }
+        //         } else {
+        //             next_ranges.push(range);
+        //         }
+        //     }
+        //     next_ranges.sort_by_key(|r|r.start);
+        //     new_ranges = next_ranges;
+        // }
     }
 }
 
-fn subtract_range_from(this: &Range<i64>, other: &Range<i64>) -> Vec<Range<i64>> {
-    let mut result = Vec::new();
+fn subtract_range_from(
+    this: &Range<i64>,
+    other: &Range<i64>
+) -> (Option<Range<i64>>, Option<Range<i64>>) {
+    let mut result = (None, None);
     if this.start < other.start {
-        result.push(this.start..other.start);
+        result.0 = Some(this.start..other.start);
     }
     if this.end > other.end {
-        result.push(other.end..this.end);
+        result.1 = Some(other.end..this.end);
     }
-    result.into_iter().filter(|r| r.start< r.end).collect()
+    result
 }
 
 fn merge_ranges(ranges: Vec<Range<i64>>) -> Vec<Range<i64>> {
@@ -293,10 +375,9 @@ mod tests {
         let range = 1..10;
         let other = 3..7;
         let result = subtract_range_from(&range, &other);
-        assert_eq!(result, vec![1..3, 7..10]);
-
-        assert_eq!(subtract_range_from(&(10..20), &(15..25)), vec![10..15]);
-        assert_eq!(subtract_range_from(&(10..20), &(5..15)), vec![15..20]);
+        assert_eq!(result, (Some(1..3), Some(7..10)));
+        assert_eq!(subtract_range_from(&(10..20), &(15..25)), (Some(10..15), None));
+        assert_eq!(subtract_range_from(&(10..20), &(5..15)), (None, Some(15..20)));
     }
 
     #[test]
